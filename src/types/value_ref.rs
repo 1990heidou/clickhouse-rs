@@ -41,6 +41,7 @@ pub enum ValueRef<'a> {
     DateTime(u32, Tz),
     DateTime64(i64, &'a (u32, Tz)),
     Nullable(Either<&'static SqlType, Box<ValueRef<'a>>>),
+    LowCardinality(&'static SqlType, Box<ValueRef<'a>>),
     Array(&'static SqlType, Arc<Vec<ValueRef<'a>>>),
     Decimal(Decimal),
     Ipv4([u8; 4]),
@@ -172,6 +173,7 @@ impl<'a> fmt::Display for ValueRef<'a> {
                 Either::Left(_) => write!(f, "NULL"),
                 Either::Right(inner) => write!(f, "{inner}"),
             },
+            ValueRef::LowCardinality(_, data) => write!(f, "{data}"),
             ValueRef::Array(_, vs) => {
                 let cells: Vec<String> = vs.iter().map(|v| format!("{v}")).collect();
                 write!(f, "[{}]", cells.join(", "))
@@ -225,6 +227,7 @@ impl<'a> From<ValueRef<'a>> for SqlType {
                 Either::Left(sql_type) => SqlType::Nullable(sql_type),
                 Either::Right(value_ref) => SqlType::Nullable(SqlType::from(*value_ref).into()),
             },
+            ValueRef::LowCardinality(t, _v) => SqlType::LowCardinality(t),
             ValueRef::Array(t, _) => SqlType::Array(t),
             ValueRef::Decimal(v) => SqlType::Decimal(v.precision, v.scale),
             ValueRef::Enum8(values, _) => SqlType::Enum8(values),
@@ -296,6 +299,7 @@ impl<'a> From<ValueRef<'a>> for Value {
                     Value::Nullable(Either::Right(Box::new(value)))
                 }
             },
+            ValueRef::LowCardinality(t, v) => Value::LowCardinality(t, Box::new((*v).into())),
             ValueRef::Array(t, vs) => {
                 let mut value_list: Vec<Value> = Vec::with_capacity(vs.len());
                 for v in vs.iter() {
@@ -394,6 +398,7 @@ impl<'a> From<&'a Value> for ValueRef<'a> {
                     ValueRef::Nullable(Either::Right(Box::new(value_ref)))
                 }
             },
+            Value::LowCardinality(t, v) => ValueRef::LowCardinality(t.to_owned(), Box::new(v.as_ref().into())),
             Value::Array(t, vs) => {
                 let mut ref_vec = Vec::with_capacity(vs.len());
                 for v in vs.iter() {
@@ -560,8 +565,8 @@ mod test {
                     Arc::new(vec![
                         ValueRef::Int32(1),
                         ValueRef::Int32(2),
-                        ValueRef::Int32(3)
-                    ])
+                        ValueRef::Int32(3),
+                    ]),
                 )
             )
         );
@@ -579,7 +584,7 @@ mod test {
             (format!("{:#}", ValueRef::DateTime(0, *DEFAULT_TZ))
                 == "Thu, 1 Jan 1970 00:00:00 +0000")
                 || (format!("{:#}", ValueRef::DateTime(0, *DEFAULT_TZ))
-                    == "Thu, 01 Jan 1970 00:00:00 +0000")
+                == "Thu, 01 Jan 1970 00:00:00 +0000")
         );
 
         assert_eq!(
@@ -628,12 +633,12 @@ mod test {
                 Arc::new(vec![
                     ValueRef::Int32(1),
                     ValueRef::Int32(2),
-                    ValueRef::Int32(3)
-                ])
+                    ValueRef::Int32(3),
+                ]),
             )),
             Value::Array(
                 SqlType::Int32.into(),
-                Arc::new(vec![Value::Int32(1), Value::Int32(2), Value::Int32(3)])
+                Arc::new(vec![Value::Int32(1), Value::Int32(2), Value::Int32(3)]),
             )
         )
     }
@@ -684,8 +689,8 @@ mod test {
                 Arc::new(vec![
                     ValueRef::Int32(1),
                     ValueRef::Int32(2),
-                    ValueRef::Int32(3)
-                ])
+                    ValueRef::Int32(3),
+                ]),
             )),
             SqlType::Array(SqlType::Int32.into())
         );

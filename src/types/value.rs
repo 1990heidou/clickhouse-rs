@@ -47,6 +47,7 @@ pub enum Value {
     Ipv6([u8; 16]),
     Uuid([u8; 16]),
     Nullable(Either<&'static SqlType, Box<Value>>),
+    LowCardinality(&'static SqlType, Box<Value>),
     Array(&'static SqlType, Arc<Vec<Value>>),
     Decimal(Decimal),
     Enum8(Vec<(String, i8)>, Enum8),
@@ -243,6 +244,7 @@ impl fmt::Display for Value {
                 Either::Left(_) => write!(f, "NULL"),
                 Either::Right(data) => data.fmt(f),
             },
+            Value::LowCardinality(_t, data) => data.fmt(f),
             Value::Array(_, vs) => {
                 let cells: Vec<String> = vs.iter().map(|v| format!("{v}")).collect();
                 write!(f, "[{}]", cells.join(", "))
@@ -303,6 +305,7 @@ impl From<Value> for SqlType {
                     SqlType::Nullable(sql_type.into())
                 }
             },
+            Value::LowCardinality(t, _) => SqlType::LowCardinality(t),
             Value::Array(t, _) => SqlType::Array(t),
             Value::Decimal(v) => SqlType::Decimal(v.precision, v.scale),
             Value::Ipv4(_) => SqlType::Ipv4,
@@ -473,6 +476,15 @@ impl From<Vec<AppDate>> for Value {
         )
     }
 }
+
+// impl From<Vec<>> for Value {
+//     fn from(v: Vec<AppDate>) -> Self {
+//         Value::Array(
+//             SqlType::Date.into(),
+//             Arc::new(v.into_iter().map(|a| a.into()).collect()),
+//         )
+//     }
+// }
 
 value_from! {
     bool: Bool,
